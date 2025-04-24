@@ -10,6 +10,7 @@ import os
 import logging
 import time
 import json
+from qdrant_client import QdrantClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,6 +21,8 @@ EMBEDDING_API_URL = os.getenv("EMBEDDING_API_URL", "https://image-embedding-serv
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "45334ad61f254307a32")
 QDRANT_URL = os.getenv("QDRANT_URL", "https://55daf392-afac-492f-bf66-2871e1510fc7.us-east4-0.gcp.cloud.qdrant.io:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.2FwGSL4xcHHqtrNJ3-Nffi6Ext0qpI5VzC9MrK153io")
+# Add local embedding URL as a fallback
+LOCAL_EMBEDDING_URL = os.getenv("LOCAL_EMBEDDING_URL", "http://localhost:3001/embed_from_url")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -38,18 +41,18 @@ app.add_middleware(
 )
 
 # Initialize Qdrant client
-from qdrant_client import QdrantClient
 try:
     qdrant_client = QdrantClient(
         url=QDRANT_URL,
-        api_key=QDRANT_API_KEY
+        api_key=QDRANT_API_KEY,
+        timeout=60.0  # Increased timeout
     )
     logger.info("Connected to Qdrant successfully")
 except Exception as e:
-    logger.error(f"Error connecting to Qdrant: {e}")
+    logger.error(f"Failed to connect to Qdrant: {e}")
     qdrant_client = None
 
-# Collection to object type mapping
+# Collection mapping
 COLLECTION_MAPPING = {
     "doubleup": "0x862810efecf0296db2e9df3e075a7af8034ba374e73ff1098e88cc4bb7c15437::doubleup_citizens::DoubleUpCitizen",
     "aeon": "0x5d0c9a06d3351e6714e7935a6efd3aed24b71994a0d709e1cd2d692b45d0cad3::aeon::Aeon",
@@ -59,7 +62,7 @@ COLLECTION_MAPPING = {
     "kumo": "0xd3d2c5edc3d8b3aafbdd50a2b9539d0ed0d87af1d3b96b61e2d33c4d6b5ebd6a::kumo::Kumo"
 }
 
-# Pydantic models
+# Response models
 class SearchResult(BaseModel):
     collection: str = Field(..., description="NFT collection name")
     collection_object_type: str = Field(..., description="NFT collection object type")
@@ -78,6 +81,7 @@ def generate_embedding_from_url(image_url: str) -> np.ndarray:
         headers = {"x-api-key": EMBEDDING_API_KEY}
         payload = {"img_url": image_url}
         
+        logger.info(f"Generating embedding for {image_url}")
         response = requests.post(
             EMBEDDING_API_URL,
             json=payload,
@@ -86,28 +90,127 @@ def generate_embedding_from_url(image_url: str) -> np.ndarray:
         )
         
         if response.status_code != 200:
-            logger.warning(f"Error from embedding service: {response.status_code} - {response.text}")
-            logger.info("Using mock embedding as fallback")
-            # Generate a mock embedding for testing
-            mock_embedding = np.random.rand(768)
-            mock_embedding = mock_embedding / np.linalg.norm(mock_embedding)
-            return mock_embedding
+            logger.error(f"Error from embedding service: {response.status_code} - {response.text}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate embedding: {response.text}"
+            )
         
         embedding = np.array(response.json()["embedding"])
+        
+        # Normalize the embedding
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+            
         return embedding
     except Exception as e:
         logger.error(f"Error generating embedding: {e}")
-        logger.info("Using mock embedding as fallback")
-        # Generate a mock embedding for testing
-        mock_embedding = np.random.rand(768)
-        mock_embedding = mock_embedding / np.linalg.norm(mock_embedding)
-        return mock_embedding
+        # Try local embedding service as fallback
+        try:
+            logger.info(f"Trying local embedding service as fallback for {image_url}")
+            headers = {"x-api-key": EMBEDDING_API_KEY}
+            payload = {"img_url": image_url}
+            
+            response = requests.post(
+                LOCAL_EMBEDDING_URL,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Error from local embedding service: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate embedding from both remote and local services"
+                )
+            
+            embedding = np.array(response.json()["embedding"])
+            
+            # Normalize the embedding
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+                
+            return embedding
+        except Exception as local_e:
+            logger.error(f"Error generating embedding from local service: {local_e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate embedding: {str(e)}. Local fallback also failed: {str(local_e)}"
+            )
+
+def generate_embedding_from_data_url(data_url: str) -> np.ndarray:
+    """Generate embedding for a data URL using the embedding service"""
+    try:
+        # Extract the base64 data
+        if not data_url.startswith('data:image/'):
+            raise ValueError("Not a valid image data URL")
+            
+        # Extract the image format and base64 data
+        format_end = data_url.find(";base64,")
+        if format_end == -1:
+            raise ValueError("Not a valid base64 image data URL")
+            
+        base64_data = data_url[format_end + 8:]  # Skip ";base64,"
+        
+        # Try to use the remote embedding service first
+        try:
+            # Use a different endpoint for base64 data
+            # If the service doesn't support base64 directly, we'll catch the exception and try local
+            headers = {"x-api-key": EMBEDDING_API_KEY}
+            payload = {"img_base64": base64_data}
+            
+            logger.info("Generating embedding from data URL using remote service")
+            response = requests.post(
+                EMBEDDING_API_URL.replace("embed_from_url", "embed_from_base64"),
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Remote service error: {response.status_code} - {response.text}")
+            
+            embedding = np.array(response.json()["embedding"])
+        except Exception as e:
+            logger.warning(f"Remote embedding service failed for data URL: {e}")
+            # Try local embedding service as fallback
+            logger.info("Trying local embedding service for data URL")
+            headers = {"x-api-key": EMBEDDING_API_KEY}
+            payload = {"img_base64": base64_data}
+            
+            response = requests.post(
+                LOCAL_EMBEDDING_URL.replace("embed_from_url", "embed_from_base64"),
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Local service error: {response.status_code} - {response.text}")
+            
+            embedding = np.array(response.json()["embedding"])
+        
+        # Normalize the embedding
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+            
+        return embedding
+    except Exception as e:
+        logger.error(f"Error generating embedding from data URL: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate embedding from data URL: {str(e)}"
+        )
 
 def search_similar_nfts(embedding: np.ndarray, threshold: float = 0.7, limit: int = 5) -> List[Dict[str, Any]]:
     """Search for similar NFTs in Qdrant"""
     try:
         if qdrant_client is None:
-            logger.warning("Qdrant client not initialized, using mock results")
+            logger.error("Qdrant client not initialized")
             return []
             
         # Search for similar NFTs in Qdrant
@@ -141,42 +244,54 @@ def search_similar_nfts(embedding: np.ndarray, threshold: float = 0.7, limit: in
 
 # API endpoints
 @app.get("/")
-async def root():
+def root():
     """Root endpoint"""
-    return {"status": "ok", "message": "NFT Image Search API is running"}
+    return {
+        "message": "NFT Image Search API",
+        "documentation": "/docs"
+    }
 
 @app.get("/health")
-async def health_check():
+def health_check():
     """Health check endpoint"""
-    status = {
-        "status": "healthy",
-        "timestamp": time.time(),
-        "services": {}
-    }
+    status = "healthy"
+    qdrant_status = "disconnected"
+    embedding_status = "unknown"
     
     # Check Qdrant connection
     try:
         if qdrant_client is not None:
+            # Check if Qdrant is responsive
             qdrant_client.get_collections()
-            status["services"]["qdrant"] = "connected"
+            qdrant_status = "connected"
         else:
-            status["services"]["qdrant"] = "disconnected"
+            qdrant_status = "not initialized"
+            status = "degraded"
     except Exception as e:
-        status["services"]["qdrant"] = "disconnected"
-        logger.warning(f"Qdrant connection issue: {str(e)}")
+        logger.error(f"Qdrant health check failed: {e}")
+        qdrant_status = f"error: {str(e)}"
+        status = "degraded"
     
     # Check embedding service
     try:
+        # Simple health check request to the embedding service
         response = requests.get(
-            "https://image-embedding-service.3matelabs.com/docs",
+            EMBEDDING_API_URL.split("/embed_from_url")[0] + "/health",
             timeout=5
         )
-        status["services"]["embedding_service"] = "available" if response.status_code == 200 else "unavailable"
+        embedding_status = "healthy" if response.status_code == 200 else f"error: {response.status_code}"
     except Exception as e:
-        status["services"]["embedding_service"] = "unavailable"
-        logger.warning(f"Embedding service issue: {str(e)}")
+        logger.error(f"Embedding service health check failed: {e}")
+        embedding_status = f"error: {str(e)}"
+        status = "degraded"
     
-    return status
+    return {
+        "status": status,
+        "services": {
+            "qdrant": qdrant_status,
+            "embedding": embedding_status
+        }
+    }
 
 @app.get("/search", response_model=SearchResponse)
 async def search_image(img_url: str = Query(..., description="URL of the image to search for"),
@@ -186,8 +301,13 @@ async def search_image(img_url: str = Query(..., description="URL of the image t
     start_time = time.time()
     
     try:
-        # Generate embedding from image URL
-        embedding = generate_embedding_from_url(img_url)
+        # Check if it's a data URL
+        if img_url.startswith('data:image/'):
+            # Generate embedding from data URL
+            embedding = generate_embedding_from_data_url(img_url)
+        else:
+            # Generate embedding from image URL
+            embedding = generate_embedding_from_url(img_url)
         
         # Search for similar NFTs
         results = search_similar_nfts(
@@ -195,21 +315,6 @@ async def search_image(img_url: str = Query(..., description="URL of the image t
             threshold=threshold,
             limit=limit
         )
-        
-        # If no results found, generate mock results for testing
-        if not results:
-            logger.info("No search results found, using mock results")
-            # Generate mock results from different collections
-            collections = list(COLLECTION_MAPPING.keys())[:min(3, limit)]
-            for i, collection in enumerate(collections):
-                similarity = 0.95 - (i * 0.05)  # Decreasing similarity scores
-                object_type = COLLECTION_MAPPING.get(collection, collection)
-                results.append({
-                    "collection": collection,
-                    "collection_object_type": object_type,
-                    "object_id": f"mock_{collection}_{i}",
-                    "similarity_score": similarity
-                })
         
         # Calculate processing time
         processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
@@ -224,23 +329,21 @@ async def search_image(img_url: str = Query(..., description="URL of the image t
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/collections")
-async def get_collections():
+def get_collections():
     """Get available NFT collections"""
-    try:
-        # Get collections from the mapping
-        collections = []
-        for name, object_type in COLLECTION_MAPPING.items():
-            collections.append({
-                "name": name,
-                "object_type": object_type
-            })
-        
-        return {"collections": collections}
-    except Exception as e:
-        logger.error(f"Error getting collections: {str(e)}")
-        return {"collections": []}
+    collections = []
+    
+    for name, object_type in COLLECTION_MAPPING.items():
+        collections.append({
+            "name": name,
+            "object_type": object_type
+        })
+    
+    return {
+        "collections": collections
+    }
 
 # Run the application
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("support_api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("support_api_no_mocks:app", host="0.0.0.0", port=8000, reload=True)
