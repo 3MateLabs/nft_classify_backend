@@ -74,6 +74,23 @@ async def embed_from_file(file: UploadFile = File(...)):
     return await file_to_embedding(file)
 
 
+@app.post("/search_similar")
+async def search_similar(request: ImageUrlRequest):
+    """
+    Endpoint to search for similar NFTs based on an embedding
+
+    Args:
+        request: SearchSimilarRequest object containing the embedding
+
+    Returns:
+        JSON response with search results or error details
+    """
+    # TODO
+    # return await search_similar(request)
+    # your endpoint, the one you already have
+    return {"status": "success", "message": "Search similar NFTs"}
+
+
 # Log server startup
 @app.on_event("startup")
 async def startup_event():

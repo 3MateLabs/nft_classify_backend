@@ -162,3 +162,5 @@ cython_debug/
 .direnv
 .DS_Store
 .vercel
+
+scripts/*csv
