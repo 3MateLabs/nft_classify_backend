@@ -12,8 +12,8 @@ from transformers import AutoImageProcessor, AutoModel
 from api.config import MODEL_PATH, PROCESSOR_PATH, logger
 
 
-processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
-model = AutoModel.from_pretrained("google/vit-base-patch16-224").to("cpu")
+# processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
+# model = AutoModel.from_pretrained("google/vit-base-patch16-224").to("cpu")
 
 import os
 import pickle
