@@ -12,8 +12,8 @@ from transformers import AutoImageProcessor, AutoModel
 from api.config import MODEL_PATH, PROCESSOR_PATH, logger
 
 
-# processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
-# model = AutoModel.from_pretrained("google/vit-base-patch16-224").to("cpu")
+processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
+model = AutoModel.from_pretrained("google/vit-base-patch16-224").to("cpu")
 
 import os
 import pickle
@@ -54,36 +54,36 @@ import pickle
 # save_model_and_processor(model, processor)
 
 
-def load_model_and_processor(model_dir="model_files", processor_file="processor.pkl"):
-    """
-    Load the model from multiple files and the processor from a single file.
+# def load_model_and_processor(model_dir="model_files", processor_file="processor.pkl"):
+#     """
+#     Load the model from multiple files and the processor from a single file.
 
-    Args:
-        model_dir: Directory where model files are saved.
-        processor_file: File name where the processor is saved.
+#     Args:
+#         model_dir: Directory where model files are saved.
+#         processor_file: File name where the processor is saved.
 
-    Returns:
-        model: The loaded model.
-        processor: The loaded processor.
-    """
-    # Load the processor
-    with open(processor_file, "rb") as f:
-        processor = pickle.load(f)
+#     Returns:
+#         model: The loaded model.
+#         processor: The loaded processor.
+#     """
+#     # Load the processor
+#     with open(processor_file, "rb") as f:
+#         processor = pickle.load(f)
 
-    # Load the model chunks
-    model_bytes = bytearray()
-    for i in range(10):  # Assuming 10 chunks
-        try:
-            with open(os.path.join(model_dir, f"model_chunk_{i}.pkl"), "rb") as f:
-                model_bytes.extend(f.read())
-        except FileNotFoundError:
-            break
+#     # Load the model chunks
+#     model_bytes = bytearray()
+#     for i in range(10):  # Assuming 10 chunks
+#         try:
+#             with open(os.path.join(model_dir, f"model_chunk_{i}.pkl"), "rb") as f:
+#                 model_bytes.extend(f.read())
+#         except FileNotFoundError:
+#             break
 
-    model_state_dict = pickle.loads(model_bytes)
-    model = AutoModel.from_pretrained("google/vit-base-patch16-224")
-    model.load_state_dict(model_state_dict)
+#     model_state_dict = pickle.loads(model_bytes)
+#     model = AutoModel.from_pretrained("google/vit-base-patch16-224")
+#     model.load_state_dict(model_state_dict)
 
-    return model, processor
+#     return model, processor
 
 
 # Singleton pattern to ensure model is loaded only once
@@ -101,7 +101,7 @@ class ModelService:
         """Initialize model and processor"""
         try:
             # Load the model and processor
-            model, processor = load_model_and_processor()
+            # model, processor = load_model_and_processor()
             logger.info(f"Loading processor from {PROCESSOR_PATH}")
             self.processor = processor
 
