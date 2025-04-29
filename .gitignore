@@ -163,13 +163,10 @@ cython_debug/
 .DS_Store
 .vercel
 
-# scripts/*csv
-
 # Data files
 data/embeddings/*.npz
 data/embeddings/*.json
 data/images/
-# *.csv
 
 # Secrets and configuration
 secrets.py
