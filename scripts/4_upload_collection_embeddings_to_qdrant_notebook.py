@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
-
+########## CELL 1: Import Libraries and Setup ##########
 """
 Script to upload collection-specific NPZ-stored embeddings to Qdrant efficiently
 This script works with the NPZ file format created by generate_collection_embeddings_npz.py
 """
 
+# Import required libraries
 import requests
 import numpy as np
 import pandas as pd
@@ -13,7 +13,6 @@ import json
 import time
 import sys
 import concurrent.futures
-import argparse
 from typing import List, Dict, Any, Tuple, Optional
 from tqdm import tqdm
 import queue
@@ -23,10 +22,14 @@ import hashlib
 
 # Add the project root to the path so we can import from api
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from api.config import (
-    EMBEDDING_DIR
-)
+try:
+    from api.config import EMBEDDING_DIR
+except ImportError:
+    # Fallback if import fails
+    EMBEDDING_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "embeddings")
+    print(f"Using fallback EMBEDDING_DIR: {EMBEDDING_DIR}")
 
+########## CELL 2: Configuration ##########
 # Qdrant configuration
 QDRANT_API_URL = "https://55daf392-afac-492f-bf66-2871e1510fc7.us-east4-0.gcp.cloud.qdrant.io:6333"
 QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.2FwGSL4xcHHqtrNJ3-Nffi6Ext0qpI5VzC9MrK153io"
@@ -36,9 +39,17 @@ COLLECTION_NAME = "nft_embeddings"  # Name of the collection in Qdrant
 BATCH_SIZE = 100  # Number of points to upload in a single request
 MAX_WORKERS = 10  # Number of concurrent workers
 
-# Function to check if collection exists
+########## CELL 3: Qdrant Collection Management Functions ##########
 def check_collection_exists(collection_name: str) -> bool:
-    """Check if a collection exists in Qdrant"""
+    """
+    Check if a collection exists in Qdrant
+    
+    Args:
+        collection_name: Name of the collection to check
+        
+    Returns:
+        True if collection exists, False otherwise
+    """
     url = f"{QDRANT_API_URL}/collections/{collection_name}"
     
     headers = {
@@ -53,9 +64,17 @@ def check_collection_exists(collection_name: str) -> bool:
         print(f"Error checking if collection exists: {str(e)}")
         return False
 
-# Function to create collection
 def create_collection(collection_name: str, vector_size: int = 768) -> bool:
-    """Create a new collection in Qdrant"""
+    """
+    Create a new collection in Qdrant
+    
+    Args:
+        collection_name: Name of the collection to create
+        vector_size: Dimensionality of the vectors to store
+        
+    Returns:
+        True if collection was created successfully, False otherwise
+    """
     url = f"{QDRANT_API_URL}/collections/{collection_name}"
     
     headers = {
@@ -79,9 +98,18 @@ def create_collection(collection_name: str, vector_size: int = 768) -> bool:
         print(f"Error creating collection: {str(e)}")
         return False
 
-# Function to upload points to Qdrant
+########## CELL 4: Data Upload Functions ##########
 def upload_points(collection_name: str, points: List[Dict[str, Any]]) -> bool:
-    """Upload points to Qdrant"""
+    """
+    Upload points to Qdrant
+    
+    Args:
+        collection_name: Name of the collection to upload to
+        points: List of points to upload
+        
+    Returns:
+        True if upload was successful, False otherwise
+    """
     url = f"{QDRANT_API_URL}/collections/{collection_name}/points"
     
     headers = {
@@ -114,9 +142,16 @@ def upload_points(collection_name: str, points: List[Dict[str, Any]]) -> bool:
         print(f"Error uploading points: {str(e)}")
         return False
 
-# Function to convert hex string to UUID
 def hex_to_uuid(hex_string: str) -> str:
-    """Convert a hex string to a valid UUID"""
+    """
+    Convert a hex string to a valid UUID
+    
+    Args:
+        hex_string: Hex string to convert
+        
+    Returns:
+        UUID string
+    """
     # Remove '0x' prefix if present
     if hex_string.startswith('0x'):
         hex_string = hex_string[2:]
@@ -128,9 +163,15 @@ def hex_to_uuid(hex_string: str) -> str:
     # Format as UUID
     return str(uuid.UUID(md5_hash))
 
-# Worker function for uploading batches
 def upload_worker(collection_name: str, task_queue: queue.Queue, progress: Dict[str, Any]):
-    """Worker function to upload batches of points to Qdrant"""
+    """
+    Worker function to upload batches of points to Qdrant
+    
+    Args:
+        collection_name: Name of the collection to upload to
+        task_queue: Queue containing batches to upload
+        progress: Dictionary for tracking progress
+    """
     while True:
         try:
             batch = task_queue.get(block=False)
@@ -152,9 +193,14 @@ def upload_worker(collection_name: str, task_queue: queue.Queue, progress: Dict[
         finally:
             task_queue.task_done()
 
-# Function to list available collections in the embeddings directory
+########## CELL 5: Collection Listing Function ##########
 def list_available_collections() -> List[str]:
-    """List available collections with NPZ and metadata files"""
+    """
+    List available collections with NPZ and metadata files
+    
+    Returns:
+        List of collection names
+    """
     collections = []
     
     # Get all files in the embeddings directory
@@ -174,44 +220,35 @@ def list_available_collections() -> List[str]:
     
     return collections
 
-# Main function
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Upload collection embeddings to Qdrant')
-    parser.add_argument('--collection', type=str, help='Name of the collection to upload')
-    parser.add_argument('--list', action='store_true', help='List all available collections')
-    args = parser.parse_args()
-    
-    # List collections if requested
-    if args.list:
-        collections = list_available_collections()
-        print(f"\nAvailable collections ({len(collections)}):\n")
-        for i, collection in enumerate(collections):
-            print(f"{i+1}. {collection}")
-        return
-    
-    # Check if collection name is provided
-    if not args.collection:
-        print("Error: Please provide a collection name using --collection or use --list to see available collections")
-        return
-    
-    collection_name = args.collection
-    
-    # Check if NPZ file and metadata file exist
-    npz_filename = f"{collection_name}_embeddings.npz"
-    metadata_filename = f"{collection_name}_metadata.json"
-    
-    npz_path = os.path.join(EMBEDDING_DIR, npz_filename)
-    metadata_path = os.path.join(EMBEDDING_DIR, metadata_filename)
-    
-    if not os.path.exists(npz_path):
-        print(f"Error: Embeddings file {npz_path} not found")
-        return
-        
-    if not os.path.exists(metadata_path):
-        print(f"Error: Metadata file {metadata_path} not found")
-        return
-    
+########## CELL 6: List Available Collections ##########
+# List all available collections
+collections = list_available_collections()
+print(f"\nAvailable collections ({len(collections)}):\n")
+for i, collection in enumerate(collections):
+    print(f"{i+1}. {collection}")
+
+########## CELL 7: Select Collection to Upload ##########
+# Set the collection name here - replace with your desired collection
+collection_name = "DoubleUp Citizen"  # Example - change this to your target collection
+
+# Check if NPZ file and metadata file exist
+npz_filename = f"{collection_name}_embeddings.npz"
+metadata_filename = f"{collection_name}_metadata.json"
+
+npz_path = os.path.join(EMBEDDING_DIR, npz_filename)
+metadata_path = os.path.join(EMBEDDING_DIR, metadata_filename)
+
+if not os.path.exists(npz_path):
+    print(f"Error: Embeddings file {npz_path} not found")
+elif not os.path.exists(metadata_path):
+    print(f"Error: Metadata file {metadata_path} not found")
+else:
+    print(f"Found embeddings file: {npz_path}")
+    print(f"Found metadata file: {metadata_path}")
+
+########## CELL 8: Load Embeddings and Metadata ##########
+# Only run this cell if the files exist
+if os.path.exists(npz_path) and os.path.exists(metadata_path):
     # Load embeddings from NPZ file
     print(f"Loading embeddings from {npz_path}...")
     embeddings = np.load(npz_path)
@@ -225,6 +262,23 @@ def main():
     num_embeddings = len(metadata)
     print(f"Loaded {num_embeddings} embeddings for collection '{collection_name}'")
     
+    # Display a sample embedding
+    if embeddings.files:
+        sample_key = embeddings.files[0]
+        sample_embedding = embeddings[sample_key]
+        print(f"\nSample embedding for {sample_key}:")
+        print(f"Shape: {sample_embedding.shape}")
+        print(f"First 5 values: {sample_embedding[:5]}")
+        
+        # Display corresponding metadata
+        if sample_key in metadata:
+            print(f"\nMetadata for {sample_key}:")
+            for k, v in metadata[sample_key].items():
+                print(f"{k}: {v}")
+
+########## CELL 9: Check and Create Qdrant Collection ##########
+# Only run this cell if embeddings and metadata were loaded successfully
+if 'embeddings' in locals() and 'metadata' in locals():
     # Check if Qdrant collection exists, create if not
     if not check_collection_exists(COLLECTION_NAME):
         print(f"Collection {COLLECTION_NAME} does not exist in Qdrant, creating it...")
@@ -234,7 +288,10 @@ def main():
         create_collection(COLLECTION_NAME, vector_size)
     else:
         print(f"Collection {COLLECTION_NAME} already exists in Qdrant")
-    
+
+########## CELL 10: Prepare Data for Upload ##########
+# Only run this cell if embeddings and metadata were loaded successfully
+if 'embeddings' in locals() and 'metadata' in locals():
     # Prepare batches for upload
     batches = []
     current_batch = []
@@ -289,7 +346,10 @@ def main():
         batches.append(current_batch)
     
     print(f"Prepared {len(batches)} batches for upload")
-    
+
+########## CELL 11: Upload Data to Qdrant ##########
+# Only run this cell if batches were prepared successfully
+if 'batches' in locals() and batches:
     # Upload batches in parallel
     task_queue = queue.Queue()
     for batch in batches:
@@ -328,5 +388,24 @@ def main():
     print(f"Successfully uploaded {progress['success']} points")
     print(f"Failed to upload {progress['failed']} points")
 
-if __name__ == "__main__":
-    main()
+########## CELL 12: Verify Upload ##########
+# Verify that the collection exists and contains the expected number of points
+if check_collection_exists(COLLECTION_NAME):
+    # Get collection info
+    url = f"{QDRANT_API_URL}/collections/{COLLECTION_NAME}"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "api-key": QDRANT_API_KEY
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            collection_info = response.json()
+            points_count = collection_info.get('result', {}).get('vectors_count', 0)
+            print(f"Collection {COLLECTION_NAME} contains {points_count} points")
+        else:
+            print(f"Error getting collection info: {response.status_code}")
+    except Exception as e:
+        print(f"Error verifying upload: {str(e)}")

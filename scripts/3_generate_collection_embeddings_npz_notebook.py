@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
-
+########## CELL 1: Import Libraries and Setup ##########
 """
 Script to generate embeddings for a specific NFT collection and store them efficiently in a single NPZ file
 This approach processes one collection at a time for better manageability
 """
 
+# Import required libraries
 import requests
 import pandas as pd
 import numpy as np
@@ -19,24 +19,39 @@ from tqdm import tqdm
 
 # Add the project root to the path so we can import from api
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from api.config import (
-    EMBEDDING_DIR
-)
-
-# Image embedding service URL and API key
-IMAGE_EMBEDDING_API_URL = "http://localhost:3001"
-IMAGE_EMBEDDING_API_KEY = "45334ad61f254307a32"
-
-# Constants
-MAX_WORKERS = 10  # Number of concurrent workers
-BATCH_SIZE = 50    # Batch size for saving embeddings
+try:
+    from api.config import EMBEDDING_DIR
+except ImportError:
+    # Fallback if import fails
+    EMBEDDING_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "embeddings")
+    print(f"Using fallback EMBEDDING_DIR: {EMBEDDING_DIR}")
 
 # Create embedding directory if it doesn't exist
 os.makedirs(EMBEDDING_DIR, exist_ok=True)
 
-# Function to generate embedding from image URL
+########## CELL 2: Configuration ##########
+# Image embedding service URL and API key
+IMAGE_EMBEDDING_API_URL = "http://localhost:3001"
+IMAGE_EMBEDDING_API_KEY = "45334ad61f254307a32"  # From memory
+
+# Constants
+MAX_WORKERS = 10  # Number of concurrent workers for parallel processing
+BATCH_SIZE = 50   # Batch size for saving embeddings to reduce memory usage
+
+# Default CSV path for NFT data
+DEFAULT_CSV_PATH = '2_all_nft_datas.csv'
+
+########## CELL 3: Embedding Generation Function ##########
 def generate_embedding_from_url(image_url: str) -> Optional[List[float]]:
-    """Generate embedding for an image using the image embedding service"""
+    """
+    Generate embedding for an image using the image embedding service
+    
+    Args:
+        image_url: URL of the image to generate embedding for
+        
+    Returns:
+        List of embedding values or None if failed
+    """
     url = f"{IMAGE_EMBEDDING_API_URL}/embed_from_url"
     
     headers = {
@@ -67,9 +82,17 @@ def generate_embedding_from_url(image_url: str) -> Optional[List[float]]:
         print(f"Error generating embedding for {image_url}: {str(e)}")
         return None
 
-# Function to process a single NFT
+########## CELL 4: NFT Processing Function ##########
 def process_nft(nft: Dict[str, Any]) -> Tuple[bool, str, Optional[List[float]]]:
-    """Process a single NFT to generate its embedding"""
+    """
+    Process a single NFT to generate its embedding
+    
+    Args:
+        nft: Dictionary containing NFT data
+        
+    Returns:
+        Tuple of (success, object_id, embedding)
+    """
     # Handle different possible column names
     object_id = nft.get("object_id")
     collection_name = nft.get("nft_collection_name")
@@ -93,10 +116,18 @@ def process_nft(nft: Dict[str, Any]) -> Tuple[bool, str, Optional[List[float]]]:
     
     return True, object_id, embedding
 
-# Function to save embeddings in batches to NPZ file
+########## CELL 5: Batch Saving Function ##########
 def save_embeddings_batch(collection_name: str, embeddings_dict: Dict[str, List[float]], 
                          metadata_dict: Dict[str, Dict[str, Any]], mode: str = 'a') -> None:
-    """Save a batch of embeddings to the NPZ file and update metadata"""
+    """
+    Save a batch of embeddings to the NPZ file and update metadata
+    
+    Args:
+        collection_name: Name of the NFT collection
+        embeddings_dict: Dictionary of object_id -> embedding
+        metadata_dict: Dictionary of object_id -> metadata
+        mode: 'w' for write (overwrite), 'a' for append (default)
+    """
     # Create filenames based on collection name
     npz_filename = f"{collection_name}_embeddings.npz"
     metadata_filename = f"{collection_name}_metadata.json"
@@ -135,9 +166,18 @@ def save_embeddings_batch(collection_name: str, embeddings_dict: Dict[str, List[
     
     print(f"Saved batch of {len(embeddings_dict)} embeddings to {npz_path}")
 
-# Function to get NFTs for a specific collection
+########## CELL 6: Collection Data Loading Functions ##########
 def get_collection_nfts(collection_name: str, csv_path: str) -> List[Dict[str, Any]]:
-    """Get NFTs for a specific collection from the CSV file"""
+    """
+    Get NFTs for a specific collection from the CSV file
+    
+    Args:
+        collection_name: Name of the collection to filter by
+        csv_path: Path to the CSV file with NFT data
+        
+    Returns:
+        List of dictionaries containing NFT data
+    """
     # Load NFT data from CSV file
     if not os.path.exists(csv_path):
         print(f"Error: NFT data file {csv_path} not found")
@@ -169,9 +209,16 @@ def get_collection_nfts(collection_name: str, csv_path: str) -> List[Dict[str, A
         print(f"Error reading CSV file: {str(e)}")
         return []
 
-# Function to list all collections in the CSV file
 def list_collections(csv_path: str) -> List[str]:
-    """List all collections in the CSV file"""
+    """
+    List all collections in the CSV file
+    
+    Args:
+        csv_path: Path to the CSV file with NFT data
+        
+    Returns:
+        List of collection names
+    """
     if not os.path.exists(csv_path):
         print(f"Error: NFT data file {csv_path} not found")
         return []
@@ -196,69 +243,66 @@ def list_collections(csv_path: str) -> List[str]:
         print(f"Error reading CSV file: {str(e)}")
         return []
 
-# Main function
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Generate embeddings for a specific NFT collection')
-    parser.add_argument('--collection', type=str, help='Name of the collection to process')
-    parser.add_argument('--list', action='store_true', help='List all available collections')
-    parser.add_argument('--csv', type=str, default='../data/embeddings/all_nft_data.csv', help='Path to the CSV file with NFT data')
-    args = parser.parse_args()
-    
-    # Get the CSV path
-    csv_path = args.csv
-    if not os.path.isabs(csv_path):
-        csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_path)
-    
-    # List collections if requested
-    if args.list:
-        collections = list_collections(csv_path)
-        print(f"\nAvailable collections ({len(collections)}):\n")
-        for i, collection in enumerate(collections):
-            print(f"{i+1}. {collection}")
-        return
-    
-    # Check if collection name is provided
-    if not args.collection:
-        print("Error: Please provide a collection name using --collection or use --list to see available collections")
-        return
-    
-    collection_name = args.collection
-    
-    # Get NFTs for the specified collection
-    nfts = get_collection_nfts(collection_name, csv_path)
-    
-    if not nfts:
-        print(f"No NFTs found for collection '{collection_name}'")
-        return
-    
+########## CELL 7: List Available Collections ##########
+# Get the CSV path - adjust this to your file location
+csv_path = DEFAULT_CSV_PATH
+if not os.path.isabs(csv_path):
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_path)
+
+# List all available collections
+collections = list_collections(csv_path)
+print(f"\nAvailable collections ({len(collections)}):\n")
+for i, collection in enumerate(collections):
+    print(f"{i+1}. {collection}")
+
+########## CELL 8: Select Collection to Process ##########
+# Set the collection name here - replace with your desired collection
+collection_name = "DoubleUp Citizen"  # Example - change this to your target collection
+
+# Get NFTs for the specified collection
+nfts = get_collection_nfts(collection_name, csv_path)
+
+if not nfts:
+    print(f"No NFTs found for collection '{collection_name}'")
+else:
     print(f"Found {len(nfts)} NFTs for collection '{collection_name}'")
     
-    # Create filenames based on collection name
-    npz_filename = f"{collection_name}_embeddings.npz"
-    metadata_filename = f"{collection_name}_metadata.json"
+    # Display a sample NFT to verify data
+    print("\nSample NFT data:")
+    sample_nft = nfts[0]
+    for key, value in sample_nft.items():
+        print(f"{key}: {value}")
+
+########## CELL 9: Check for Existing Embeddings ##########
+# Create filenames based on collection name
+npz_filename = f"{collection_name}_embeddings.npz"
+metadata_filename = f"{collection_name}_metadata.json"
+
+npz_path = os.path.join(EMBEDDING_DIR, npz_filename)
+metadata_path = os.path.join(EMBEDDING_DIR, metadata_filename)
+
+# Check if files already exist
+overwrite_existing = False
+if os.path.exists(npz_path) and os.path.exists(metadata_path):
+    print(f"Files already exist for collection '{collection_name}'")
+    with open(metadata_path, 'r') as f:
+        existing_metadata = json.load(f)
+    print(f"Existing metadata contains {len(existing_metadata)} entries")
     
-    npz_path = os.path.join(EMBEDDING_DIR, npz_filename)
-    metadata_path = os.path.join(EMBEDDING_DIR, metadata_filename)
+    # In notebook, we'll set this manually rather than prompting
+    overwrite_existing = True  # Set to True to overwrite, False to keep existing
     
-    # Check if files already exist
-    if os.path.exists(npz_path) and os.path.exists(metadata_path):
-        print(f"Files already exist for collection '{collection_name}'")
-        with open(metadata_path, 'r') as f:
-            existing_metadata = json.load(f)
-        print(f"Existing metadata contains {len(existing_metadata)} entries")
-        
-        # Ask if user wants to overwrite
-        response = input("Do you want to overwrite existing files? (y/n): ")
-        if response.lower() != 'y':
-            print("Aborting operation")
-            return
-        
+    if overwrite_existing:
         # Remove existing files
         os.remove(npz_path)
         os.remove(metadata_path)
         print("Removed existing files")
-    
+    else:
+        print("Keeping existing files - processing will be skipped")
+
+########## CELL 10: Process Collection and Generate Embeddings ##########
+# Only run this cell if we have NFTs and either no existing files or we want to overwrite
+if nfts and (not os.path.exists(npz_path) or overwrite_existing):
     # Initialize counters and storage
     success_count = 0
     failed_count = 0
@@ -340,5 +384,31 @@ def main():
     print(f"All embeddings saved to {npz_path}")
     print(f"Metadata saved to {metadata_path}")
 
-if __name__ == "__main__":
-    main()
+########## CELL 11: Verify Results ##########
+# Check the generated embeddings and metadata
+if os.path.exists(npz_path) and os.path.exists(metadata_path):
+    # Load the NPZ file
+    embeddings = np.load(npz_path)
+    
+    # Load the metadata
+    with open(metadata_path, 'r') as f:
+        metadata = json.load(f)
+    
+    print(f"Embeddings file contains {len(embeddings.files)} embeddings")
+    print(f"Metadata file contains {len(metadata)} entries")
+    
+    # Display a sample embedding
+    if embeddings.files:
+        sample_key = embeddings.files[0]
+        sample_embedding = embeddings[sample_key]
+        print(f"\nSample embedding for {sample_key}:")
+        print(f"Shape: {sample_embedding.shape}")
+        print(f"First 5 values: {sample_embedding[:5]}")
+        
+        # Display corresponding metadata
+        if sample_key in metadata:
+            print(f"\nMetadata for {sample_key}:")
+            for k, v in metadata[sample_key].items():
+                print(f"{k}: {v}")
+else:
+    print("No embeddings or metadata files found")
