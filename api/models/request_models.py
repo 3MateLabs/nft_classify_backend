@@ -33,3 +33,21 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error message")
     traceback: Optional[str] = Field(None, description="Error traceback for debugging")
+
+
+class CollectionProcessRequest(BaseModel):
+    """
+    Request model for processing an NFT collection
+    """
+
+    collection_id: str = Field(..., description="ID of the NFT collection to process")
+    limit: Optional[int] = Field(20, description="Maximum number of NFTs to process")
+
+
+class SearchSimilarRequest(BaseModel):
+    """
+    Request model for searching similar NFTs
+    """
+
+    embedding: List[float] = Field(..., description="Image embedding vector")
+    limit: Optional[int] = Field(10, description="Maximum number of results to return")

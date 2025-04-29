@@ -42,3 +42,17 @@ try:
 except ImportError:
     SVG_SUPPORTED = False
     logger.warning("CairoSVG not found. SVG support will be limited.")
+
+# NFT Service settings
+BLOCKVISION_API_KEY = "2uulalvqIxowwmCkEMGozKfUmrW"
+IMAGE_EMBEDDING_API_KEY = "45334ad61f254307a32"
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.2FwGSL4xcHHqtrNJ3-Nffi6Ext0qpI5VzC9MrK153io"
+
+# API Endpoints
+BLOCKVISION_API_URL = "https://api.blockvision.org/v1/sui/mainnet"
+IMAGE_EMBEDDING_API_URL = "http://localhost:8000"
+QDRANT_API_URL = "https://55daf392-afac-492f-bf66-2871e1510fc7.us-east4-0.gcp.cloud.qdrant.io:6333"
+
+# Storage paths
+IMAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "images")
+EMBEDDING_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "embeddings")

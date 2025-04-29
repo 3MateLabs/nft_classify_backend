@@ -163,4 +163,32 @@ cython_debug/
 .DS_Store
 .vercel
 
-scripts/*csv
+# scripts/*csv
+
+# Data files
+data/embeddings/*.npz
+data/embeddings/*.json
+data/images/
+# *.csv
+
+# Secrets and configuration
+secrets.py
+*_config.json
+api_keys.py
+
+# Qdrant specific
+qdrant_data/
+
+# Model files
+*.pt
+*.pth
+*.onnx
+local_model/
+local_processor/
+
+# Logs
+logs/
+*.log
+
+# OS specific
+.DS_Store
