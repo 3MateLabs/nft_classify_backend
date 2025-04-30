@@ -18,6 +18,7 @@ import dotenv
 import json
 import traceback
 from typing import Dict, Any, Union, List, Optional
+import uuid
 
 dotenv.load_dotenv()
 
@@ -37,7 +38,9 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-qdrant_client = AsyncQdrantClient(url=os.getenv("QDRANT_URL"))
+qdrant_client = AsyncQdrantClient(
+    url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY")
+)
 collection_name = os.getenv("QDRANT_COLLECTION_NAME")
 
 
@@ -99,14 +102,7 @@ async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
     try:
         payload = request.payload
         embedding_response = await url_to_embedding(request)
-
-        # Check if embedding_response is a JSONResponse and extract content
-        if hasattr(embedding_response, "body"):
-            import json
-
-            embedding_response = json.loads(embedding_response.body)
-
-        vector = embedding_response["embedding"][0]
+        embedding = json.loads(embedding_response.body)["embedding"][0]
 
         # Check if Qdrant URL is configured
         if not os.getenv("QDRANT_URL"):
@@ -117,16 +113,35 @@ async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
                 },
             )
 
+        # First, search if there's an exact match for this vector
         try:
-            # Upsert the vector with payload to Qdrant
-            await qdrant_client.upsert(
-                collection_name=collection_name,
-                points=[
-                    PointStruct(
-                        id=payload.get("id", None), vector=vector, payload=payload
-                    )
-                ],
+            # Check if collection exists before searching
+            collection_exists = await qdrant_client.collection_exists(
+                collection_name=collection_name
             )
+
+            existing_point_id = None
+            if collection_exists:
+                # Search for exact matches with high threshold
+                search_results = await qdrant_client.search(
+                    collection_name=collection_name,
+                    query_vector=embedding,
+                    limit=1,
+                    score_threshold=0.99,  # High threshold for exact match
+                )
+
+                if search_results and len(search_results) > 0:
+                    # Found an exact match, use its ID
+                    existing_point_id = search_results[0].id
+                    logger.info(f"Found exact match with ID: {existing_point_id}")
+
+            # Use existing ID if found, otherwise use provided ID or generate new one
+            point_id = existing_point_id or payload.get("id") or str(uuid.uuid4())
+            points = [PointStruct(id=point_id, vector=embedding, payload=payload)]
+
+            # Upsert the vector with payload to Qdrant
+            await qdrant_client.upsert(collection_name=collection_name, points=points)
+
         except Exception as e:
             try:
                 # Check if collection doesn't exist
@@ -137,38 +152,32 @@ async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
                     # Create collection with the dimension of the vector
                     await qdrant_client.create_collection(
                         collection_name=collection_name,
-                        vectors_config={"size": len(vector), "distance": "cosine"},
+                        vectors_config={"size": len(embedding), "distance": "Cosine"},
                     )
+                    # Generate a new ID since there can't be any matches in a new collection
+                    point_id = payload.get("id") or str(uuid.uuid4())
+                    points = [
+                        PointStruct(id=point_id, vector=embedding, payload=payload)
+                    ]
                     # Try upsert again
                     await qdrant_client.upsert(
-                        collection_name=collection_name,
-                        points=[
-                            PointStruct(
-                                id=payload.get("id", None),
-                                vector=vector,
-                                payload=payload,
-                            )
-                        ],
+                        collection_name=collection_name, points=points
                     )
                 else:
                     # If it's another error, return a meaningful error message
                     logger.error(f"Error upserting to Qdrant: {str(e)}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"error": f"Error connecting to Qdrant: {str(e)}"},
-                    )
+                    return {"error": f"Error upserting to Qdrant: {str(e)}"}
             except Exception as inner_e:
                 # Handle connection errors
                 logger.error(f"Error connecting to Qdrant: {str(inner_e)}")
-                return JSONResponse(
-                    status_code=500,
-                    content={"error": f"Error connecting to Qdrant: {str(inner_e)}"},
-                )
+                return {"error": f"Error connecting to Qdrant: {str(inner_e)}"}
 
         return {
             "status": "success",
             "message": "NFT uploaded to Qdrant",
-            "embedding": vector[:5],
+            "embedding": embedding[:5],
+            "point_id": point_id,
+            "updated_existing": existing_point_id is not None,
         }
     except Exception as e:
         error_traceback = traceback.format_exc()
