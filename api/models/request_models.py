@@ -16,6 +16,15 @@ class ImageUrlRequest(BaseModel):
     img_url: str = Field(..., description="URL of the image or base64 encoded data URL")
 
 
+class ImageUrlWithPayloadRequest(BaseModel):
+    """
+    Request model for image URL-based embedding with additional fields
+    """
+
+    img_url: str = Field(..., description="URL of the image or base64 encoded data URL")
+    fields: str = Field(..., description="JSON string containing fields to upload")
+
+
 class EmbeddingResponse(BaseModel):
     """
     Response model for embedding results

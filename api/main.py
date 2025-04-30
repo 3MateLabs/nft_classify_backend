@@ -7,11 +7,15 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import API_TITLE, API_DESCRIPTION, API_VERSION, logger
-from api.models.request_models import ImageUrlRequest
+from api.models.request_models import ImageUrlRequest, ImageUrlWithPayloadRequest
 from api.handlers.embedding_handlers import url_to_embedding, file_to_embedding
+
+from qdrant_client.async_qdrant_client import AsyncQdrantClient
+from qdrant_client.http.models import PointStruct
 
 import os
 import dotenv
+import json
 
 dotenv.load_dotenv()
 
@@ -30,6 +34,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+qdrant_client = AsyncQdrantClient(url=os.getenv("QDRANT_URL"))
+collection_name = os.getenv("QDRANT_COLLECTION_NAME")
 
 
 # Health check endpoint
@@ -74,6 +81,57 @@ async def embed_from_file(file: UploadFile = File(...)):
     return await file_to_embedding(file)
 
 
+@app.get("/check_collection_exist")
+async def check_collection_exist():
+    """
+    Endpoint to check if the collection exists in Qdrant
+    """
+    return await qdrant_client.collection_exists(collection_name=collection_name)
+
+
+@app.post("/upload_url_with_payload")
+async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
+    """
+    Endpoint to upload an image URL and a file to Qdrant
+    """
+    embedding_response = await url_to_embedding(request)
+    payload = json.loads(request.fields)
+    vector = embedding_response["embedding"]
+    try:
+        # Upsert the vector with payload to Qdrant
+        await qdrant_client.upsert(
+            collection_name=collection_name,
+            points=[
+                PointStruct(id=payload.get("id", None), vector=vector, payload=payload)
+            ],
+        )
+    except Exception as e:
+        # Check if collection doesn't exist
+        collection_exists = await qdrant_client.collection_exists(
+            collection_name=collection_name
+        )
+        if not collection_exists:
+            # Create collection with the dimension of the vector
+            await qdrant_client.create_collection(
+                collection_name=collection_name,
+                vectors_config={"size": len(vector), "distance": "cosine"},
+            )
+            # Try upsert again
+            await qdrant_client.upsert(
+                collection_name=collection_name,
+                points=[
+                    PointStruct(
+                        id=payload.get("id", None), vector=vector, payload=payload
+                    )
+                ],
+            )
+        else:
+            # If it's another error, re-raise it
+            raise e
+
+    return {"status": "success", "message": "NFT uploaded to Qdrant"}
+
+
 @app.post("/search_similar")
 async def search_similar(request: ImageUrlRequest):
     """
@@ -85,10 +143,13 @@ async def search_similar(request: ImageUrlRequest):
     Returns:
         JSON response with search results or error details
     """
-    # TODO
-    # return await search_similar(request)
-    # your endpoint, the one you already have
-    return {"status": "success", "message": "Search similar NFTs"}
+    embedding = await url_to_embedding(request)
+    result = await qdrant_client.search(
+        collection_name=collection_name,
+        query_vector=embedding,
+        limit=10,
+    )
+    return result
 
 
 # Log server startup
