@@ -22,7 +22,9 @@ class ImageUrlWithPayloadRequest(BaseModel):
     """
 
     img_url: str = Field(..., description="URL of the image or base64 encoded data URL")
-    fields: str = Field(..., description="JSON string containing fields to upload")
+    payload: dict = Field(
+        ..., description="Dictionary containing key-value pairs to upload as JSON"
+    )
 
 
 class EmbeddingResponse(BaseModel):
