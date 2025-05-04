@@ -279,7 +279,7 @@ def download_nft_images(collection_name: str, limit: Optional[int] = None) -> Di
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "NFT Classification API"}
+    return {"status": "healthy", "message": "NFT Classification Backend is running"}
 
 @app.post("/search", response_model=ImageSearchResponse)
 async def search_image(request: ImageSearchRequest):
@@ -343,22 +343,30 @@ async def list_collections():
     try:
         # Load NFT data from CSV
         if not os.path.exists(NFT_DATA_CSV):
+            logger.error(f"NFT data file {NFT_DATA_CSV} not found")
             raise HTTPException(status_code=404, detail=f"NFT data file {NFT_DATA_CSV} not found")
         
+        logger.info(f"Loading NFT data from {NFT_DATA_CSV}")
         nfts_df = pd.read_csv(NFT_DATA_CSV)
+        logger.info(f"Loaded {len(nfts_df)} NFTs from CSV")
+        logger.info(f"CSV columns: {nfts_df.columns.tolist()}")
         
         # Check if 'nft_collection_name' column exists
         collection_column = None
         if 'nft_collection_name' in nfts_df.columns:
             collection_column = 'nft_collection_name'
+            logger.info(f"Using column: {collection_column}")
         elif 'nftCollectionName' in nfts_df.columns:
             collection_column = 'nftCollectionName'
+            logger.info(f"Using column: {collection_column}")
         
         if collection_column is None:
+            logger.error("Could not find collection name column in CSV")
             raise HTTPException(status_code=500, detail="Could not find collection name column in CSV")
         
         # Get unique collections
         collections = nfts_df[collection_column].unique().tolist()
+        logger.info(f"Found {len(collections)} collections: {collections}")
         
         # Count NFTs per collection
         collection_counts = {}

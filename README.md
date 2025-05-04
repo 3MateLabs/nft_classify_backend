@@ -8,24 +8,27 @@ Follow these steps to get the NFT Classification system up and running quickly:
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12ß+
 - Qdrant instance (cloud or local)
 - Access to NFT image data
 
 ### Installation
 
 1. Clone this repository
+
 ```bash
-git clone https://github.com/yourusername/nft-classifier.git
-cd nft-classifier
+git clone https://github.com/yourusername/nft-classify-backend.git
+cd nft-classify-backend
 ```
 
 2. Install dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Set up environment variables (optional)
+
 ```bash
 # Create a .env file with your configuration
 # You can use the example.env as a template
@@ -34,73 +37,91 @@ cp example.env .env
 
 ### Running the System
 
-#### 1. Start the Image Embedding Service
+#### 1. Start the Local Embedding Service
 
-The image embedding service generates vector embeddings from NFT images.
-
-```bash
-cd image_embedding_service
-python -m uvicorn api.main:app --host 0.0.0.0 --port 3001
-```
-
-#### 2. Start the FastAPI Application
-
-The main API provides endpoints for searching and managing NFTs.
+The local embedding service generates vector embeddings from NFT images.
 
 ```bash
-cd api
-python -m uvicorn app:app --host 0.0.0.0 --port 8000
+cd scripts
+python local_embedding_service.py
 ```
 
-#### 3. Generate Embeddings for a Collection
+This will start the embedding service on a port.
 
-Process NFT collections to generate embeddings and store them efficiently.
+#### 2. Start the Qdrant Search API
+
+The search API provides endpoints for finding similar NFTs.
 
 ```bash
-# List available collections
-python scripts/generate_collection_embeddings_npz.py --list
-
-# Generate embeddings for a specific collection
-python scripts/generate_collection_embeddings_npz.py --collection "Prime Machin"
+cd scripts
+python qdrant_search_api.py
 ```
 
-#### 4. Upload Embeddings to Qdrant
+This will start the search API on a different port.
 
-Upload the generated embeddings to the Qdrant vector database.
+#### 3. Generate Embeddings for a Collection (Optional)
+
+If you want to process new NFT collections to generate embeddings:
+
+```bash
+# Generate embeddings for a collection
+python scripts/3_generate_collection_embeddings_npz_notebook.py
+```
+
+#### 4. Upload Embeddings to Qdrant (Optional)
+
+If you have new embeddings to upload to the Qdrant vector database:
 
 ```bash
 # Upload a collection's embeddings to Qdrant
-python scripts/upload_collection_embeddings_to_qdrant.py --collection "Prime Machin"
+python scripts/4_upload_collection_embeddings_to_qdrant_notebook.py
 ```
 
 ### Using the API
 
-Once the system is running, you can use the following API endpoints:
+Once both services are running, you can use the following API endpoints:
 
 #### Search for Similar NFTs
 
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"img_url": "https://example.com/nft-image.jpg", "top_k": 5, "threshold": 0.7}' http://localhost:8000/search
+curl -X POST -H "Content-Type: application/json" -d '{"img_url": "https://example.com/nft-image.jpg", "limit": 5, "threshold": 0.7}' http://localhost:8003/search
 ```
 
-#### List Available Collections
+Example response:
 
-```bash
-curl http://localhost:8000/collections
+```json
+{
+  "results": [
+    {
+      "score": 0.9866967,
+      "object_id": "0x7094f7f87bbe3b6be9fbfad6732dc3aa2c2ecc0e9e10f6472381ed0d7d0cf8e1",
+      "collection_id": "Prime Machin",
+      "name": "Prime Machin #123",
+      "image_url": "https://img.sm.xyz/0x7094f7f87bbe3b6be9fbfad6732dc3aa2c2ecc0e9e10f6472381ed0d7d0cf8e1/",
+      "nft_type": "0x034c162f6b594cb5a1805264dd01ca5d80ce3eca6522e6ee37fd9ebfb9d3ddca::factory::PrimeMachin",
+      "nft_collection_name": "Prime Machin",
+      "creator": "0x3c5e1e63fcb09456baf9424a02a1758acbfb85f69faa3ee41247f850104cd10e",
+      "description": "",
+      "created_time": "1712475154974"
+    }
+  ],
+  "count": 1,
+  "query_time_ms": 855.8011054992676
+}
 ```
 
-#### Download NFT Images for a Collection
+#### Health Check
 
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"collection_name": "Prime Machin", "limit": 10}' http://localhost:8000/download
+curl http://localhost:8003/health
 ```
 
 ## System Architecture
 
 ### Components
 
-1. **FastAPI Application**: Main API for searching and managing NFTs
-2. **Image Embedding Service**: Generates embeddings from NFT images using a ViT model
+1. **Local Embedding Service**: Generates embeddings from NFT images using a ViT model
+2. **Qdrant Search API**: Provides endpoints for searching similar NFTs
 3. **Qdrant Vector Database**: Stores and indexes embeddings for similarity search
 4. **NPZ Storage**: Efficient storage format for embeddings and metadata
 
@@ -111,47 +132,19 @@ curl -X POST -H "Content-Type: application/json" -d '{"collection_name": "Prime 
 3. Embeddings are uploaded to Qdrant for efficient similarity search
 4. The API allows searching for similar NFTs based on image URLs
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Embedding Service Not Running**
-   - Ensure the embedding service is running on port 3001
-   - Check that the ViT model is properly loaded
-
-2. **Qdrant Connection Issues**
-   - Verify your Qdrant URL and API key
-   - Check that the collection exists in Qdrant
-
-3. **Missing Dependencies**
-   - Run `pip install -r requirements.txt` to install all required packages
-
-### Logs
-
-- API logs are available in the console when running the FastAPI application
-- Embedding generation logs are printed during the collection processing
-
-## File Structure
-
 ```
-nft-classifier/
-│
-├── api/
-│   ├── app.py                   # Main FastAPI application
-│   ├── config.py                # Configuration settings
-│   └── start_api.sh             # API startup script
-│
-├── scripts/
-│   ├── generate_collection_embeddings_npz.py    # Generate embeddings
-│   └── upload_collection_embeddings_to_qdrant.py # Upload to Qdrant
-│
-├── data/
-│   └── embeddings/              # Storage for NPZ files and metadata
-│
-├── requirements.txt             # Python dependencies
-└── README.md                    # This documentation
-```
+
+## API Keys and Credentials
+
+The system uses the following API keys:
+
+- **BlockVision API**: For fetching NFT metadata
+- **Image Embedding Service**: For generating embeddings
+- **Qdrant**: For vector database access
+
+Make sure to set up your own API keys in the configuration files before running the system.
 
 ## License
 
 [MIT License](LICENSE)
+```

@@ -50,6 +50,22 @@ print("Model and processor loaded successfully")
 def download_image(url: str) -> Image.Image:
     """Download image from URL and convert to PIL Image"""
     try:
+        # Check if the URL is a base64-encoded image
+        if url.startswith('data:image/'):
+            # Extract the base64 part
+            print("Detected base64-encoded image")
+            header, encoded = url.split(",", 1)
+            import base64
+            # Decode the base64 string
+            img_data = base64.b64decode(encoded)
+            # Open the image from binary data
+            img = Image.open(BytesIO(img_data))
+            # Convert to RGB if needed
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            return img
+        
+        # Regular URL handling
         # Add user agent to avoid being blocked
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
@@ -139,7 +155,7 @@ async def embed_from_url(request: ImageUrlRequest):
 # Main function to run the server
 def main():
     # Run the FastAPI app with uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=3001)
 
 if __name__ == "__main__":
     main()
