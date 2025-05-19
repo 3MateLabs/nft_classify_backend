@@ -2,9 +2,11 @@
 Main FastAPI application entry point
 """
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyHeader
+from starlette.status import HTTP_403_FORBIDDEN
 
 from api.config import API_TITLE, API_DESCRIPTION, API_VERSION, logger
 from api.models.request_models import ImageUrlRequest, ImageUrlWithPayloadRequest
@@ -21,6 +23,26 @@ from typing import Dict, Any, Union, List, Optional
 import uuid
 
 dotenv.load_dotenv()
+
+# API Key security scheme
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    """
+    Validate API key from header
+    """
+    if api_key_header is None:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN, detail="No API key provided"
+        )
+
+    if api_key_header != os.getenv("API_KEY"):
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid API key")
+
+    return api_key_header
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -45,7 +67,7 @@ collection_name = os.getenv("QDRANT_COLLECTION_NAME")
 
 
 # Health check endpoint
-@app.get("/")
+@app.get("/", dependencies=[Depends(get_api_key)])
 async def read_root():
     """Health check endpoint"""
     print("Health check endpoint")
@@ -54,7 +76,7 @@ async def read_root():
 
 
 # Embedding endpoints
-@app.post("/embed_from_url")
+@app.post("/embed_from_url", dependencies=[Depends(get_api_key)])
 async def embed_from_url(request: ImageUrlRequest):
     """
     Endpoint to get embeddings from an image URL
@@ -70,7 +92,7 @@ async def embed_from_url(request: ImageUrlRequest):
     return await url_to_embedding(request)
 
 
-@app.post("/embed_from_file")
+@app.post("/embed_from_file", dependencies=[Depends(get_api_key)])
 async def embed_from_file(file: UploadFile = File(...)):
     """
     Endpoint to get embeddings from an uploaded image file
@@ -86,7 +108,7 @@ async def embed_from_file(file: UploadFile = File(...)):
     return await file_to_embedding(file)
 
 
-@app.get("/check_collection_exist")
+@app.get("/check_collection_exist", dependencies=[Depends(get_api_key)])
 async def check_collection_exist():
     """
     Endpoint to check if the collection exists in Qdrant
@@ -94,7 +116,7 @@ async def check_collection_exist():
     return await qdrant_client.collection_exists(collection_name=collection_name)
 
 
-@app.post("/upload_url_with_payload")
+@app.post("/upload_url_with_payload", dependencies=[Depends(get_api_key)])
 async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
     """
     Endpoint to upload an image URL and a file to Qdrant
@@ -188,7 +210,7 @@ async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
         )
 
 
-@app.post("/search_similar")
+@app.post("/search_similar", dependencies=[Depends(get_api_key)])
 async def search_similar(request: ImageUrlRequest):
     """
     Endpoint to search for similar NFTs based on an embedding
