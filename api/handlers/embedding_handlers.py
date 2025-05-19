@@ -29,7 +29,12 @@ async def url_to_embedding(request: ImageUrlRequest) -> JSONResponse:
 
         # Generate embedding
         logger.info("Generating embedding...")
+        import time
+
+        start_time = time.time()
         embedding = model_service.generate_embedding(image)
+        elapsed_time = time.time() - start_time
+        logger.info(f"Embedding generation took {elapsed_time:.2f} seconds")
 
         # Return result
         return JSONResponse(content={"embedding": embedding})
