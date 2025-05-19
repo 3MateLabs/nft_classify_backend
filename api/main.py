@@ -75,6 +75,13 @@ async def read_root():
     return {"status": "healthy", "message": "NFT Classification Backend is running"}
 
 
+
+@app.get("/ping")
+async def ping():
+    """Ping endpoint for health checks"""
+    return {"status": "ok", "message": "pong"}
+
+
 # Embedding endpoints
 @app.post("/embed_from_url", dependencies=[Depends(get_api_key)])
 async def embed_from_url(request: ImageUrlRequest):
