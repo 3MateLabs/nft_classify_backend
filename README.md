@@ -8,7 +8,8 @@ Follow these steps to get the NFT Classification system up and running quickly:
 
 ### Prerequisites
 
-- Python 3.12ß+
+- Python 3.12+ for backend
+- Node.js 18+ and npm for frontend
 - Qdrant instance (cloud or local)
 - Access to NFT image data
 
@@ -21,7 +22,7 @@ git clone https://github.com/yourusername/nft-classify-backend.git
 cd nft-classify-backend
 ```
 
-2. Install dependencies
+2. Install backend dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -46,7 +47,7 @@ cd scripts
 python local_embedding_service.py
 ```
 
-This will start the embedding service on a port.
+This will start the embedding service on port 3001.
 
 #### 2. Start the Qdrant Search API
 
@@ -57,9 +58,26 @@ cd scripts
 python qdrant_search_api.py
 ```
 
-This will start the search API on a different port.
+This will start the search API on port 8003.
 
-#### 3. Generate Embeddings for a Collection (Optional)
+#### 3. Start the Frontend Application
+
+The frontend provides a modern user interface for the NFT similarity search.
+
+```bash
+# Navigate to the frontend directory
+cd ../nft_classify_frontend
+
+# Install frontend dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+
+This will start the frontend application on port 5173. You can access it at http://localhost:5173.
+
+#### 4. Generate Embeddings for a Collection (Optional)
 
 If you want to process new NFT collections to generate embeddings:
 
@@ -68,7 +86,7 @@ If you want to process new NFT collections to generate embeddings:
 python scripts/3_generate_collection_embeddings_npz_notebook.py
 ```
 
-#### 4. Upload Embeddings to Qdrant (Optional)
+#### 5. Upload Embeddings to Qdrant (Optional)
 
 If you have new embeddings to upload to the Qdrant vector database:
 
@@ -77,11 +95,18 @@ If you have new embeddings to upload to the Qdrant vector database:
 python scripts/4_upload_collection_embeddings_to_qdrant_notebook.py
 ```
 
-### Using the API
+### Using the Application
 
-Once both services are running, you can use the following API endpoints:
+Once all services are running, you can use the NFT Similarity Search in two ways:
 
-#### Search for Similar NFTs
+#### 1. Through the Web Interface
+
+1. Open your browser and go to http://localhost:5173
+2. Upload an image or provide an image URL
+3. Click "Search Similar NFTs"
+4. View the results sorted by similarity score
+
+#### 2. Using the API Directly
 
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{"img_url": "https://example.com/nft-image.jpg", "limit": 5, "threshold": 0.7}' http://localhost:8003/search
@@ -124,6 +149,7 @@ curl http://localhost:8003/health
 2. **Qdrant Search API**: Provides endpoints for searching similar NFTs
 3. **Qdrant Vector Database**: Stores and indexes embeddings for similarity search
 4. **NPZ Storage**: Efficient storage format for embeddings and metadata
+5. **Frontend Application**: Modern React-based UI for interacting with the system
 
 ### Data Flow
 
@@ -131,8 +157,7 @@ curl http://localhost:8003/health
 2. Embeddings are stored in NPZ files along with metadata
 3. Embeddings are uploaded to Qdrant for efficient similarity search
 4. The API allows searching for similar NFTs based on image URLs
-
-```
+5. The frontend provides a user-friendly interface for the search functionality
 
 ## API Keys and Credentials
 
@@ -147,4 +172,3 @@ Make sure to set up your own API keys in the configuration files before running 
 ## License
 
 [MIT License](LICENSE)
-```
