@@ -59,10 +59,10 @@ def download_image(url: str) -> BytesIO:
 
 def process_image_from_url(image_url: str) -> Image.Image:
     """
-    Process an image from a URL (regular HTTP URL or base64 data URL)
+    Process an image from a URL (regular HTTP URL, IPFS URL, or base64 data URL)
 
     Args:
-        image_url: URL of the image or base64 data URL
+        image_url: URL of the image, IPFS URL, or base64 data URL
 
     Returns:
         PIL Image object ready for model processing
@@ -85,7 +85,14 @@ def process_image_from_url(image_url: str) -> Image.Image:
             except Exception as e:
                 raise Exception(f"Error processing base64 image: {e}")
         else:
-            # Regular URL - download the image
+            # Handle IPFS URLs
+            if image_url.startswith("ipfs://"):
+                # Convert IPFS URL to Cloudflare IPFS gateway URL
+                ipfs_hash = image_url.replace("ipfs://", "")
+                image_url = f"https://cloudflare-ipfs.com/ipfs/{ipfs_hash}"
+                logger.info(f"Converting IPFS URL to Cloudflare gateway: {image_url}")
+
+            # Download the image
             content_stream = download_image(image_url)
 
             # Get content bytes for format detection
