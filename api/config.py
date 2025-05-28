@@ -22,7 +22,7 @@ API_DESCRIPTION = "Backend service for NFT classification with image embedding"
 API_VERSION = "1.0.0"
 
 # Request settings
-REQUEST_TIMEOUT = 10  # seconds
+REQUEST_TIMEOUT = 900000  # seconds
 REQUEST_MAX_RETRIES = 3
 REQUEST_BACKOFF_FACTOR = 2  # exponential backoff
 

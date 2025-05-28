@@ -87,10 +87,10 @@ def process_image_from_url(image_url: str) -> Image.Image:
         else:
             # Handle IPFS URLs
             if image_url.startswith("ipfs://"):
-                # Convert IPFS URL to Cloudflare IPFS gateway URL
+                # Convert IPFS URL to IPFS gateway URL
                 ipfs_hash = image_url.replace("ipfs://", "")
-                image_url = f"https://cloudflare-ipfs.com/ipfs/{ipfs_hash}"
-                logger.info(f"Converting IPFS URL to Cloudflare gateway: {image_url}")
+                image_url = f"https://ipfs.io/ipfs/{ipfs_hash}"
+                logger.info(f"Converting IPFS URL to IPFS gateway: {image_url}")
 
             # Download the image
             content_stream = download_image(image_url)
