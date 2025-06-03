@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile, Depends
 from fastapi.responses import JSONResponse
 
 from api.models.request_models import ImageUrlRequest, EmbeddingResponse, ErrorResponse
-from api.services.image_service import process_image_from_url, process_image_from_bytes
+from api.services.image_service import process_image_from_url, process_image_from_bytes, process_image_from_url_async
 from api.services.model_service import model_service
 from api.config import logger
 
@@ -23,16 +23,16 @@ async def url_to_embedding(request: ImageUrlRequest) -> JSONResponse:
         JSONResponse with embedding data or error details
     """
     try:
-        # Process the image from URL
+        # Process the image from URL asynchronously
         logger.info(f"Processing image from URL: {request.img_url[:100]}...")
-        image = process_image_from_url(request.img_url)
+        image = await process_image_from_url_async(request.img_url)
 
-        # Generate embedding
+        # Generate embedding (queued for single-threaded execution)
         logger.info("Generating embedding...")
         import time
 
         start_time = time.time()
-        embedding = model_service.generate_embedding(image)
+        embedding = await model_service.generate_embedding(image)
         elapsed_time = time.time() - start_time
         logger.info(f"Embedding generation took {elapsed_time:.2f} seconds")
 
@@ -67,7 +67,7 @@ async def file_to_embedding(file: UploadFile) -> JSONResponse:
 
         # Generate embedding
         logger.info("Generating embedding...")
-        embedding = model_service.generate_embedding(image)
+        embedding = await model_service.generate_embedding(image)
 
         # Return result
         return JSONResponse(content={"embedding": embedding})

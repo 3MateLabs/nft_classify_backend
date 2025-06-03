@@ -5,6 +5,8 @@ Handles image downloading, processing, and preparation for model inference
 
 import time
 import requests
+import aiohttp
+import asyncio
 from io import BytesIO
 from PIL import Image
 from typing import Union, BinaryIO
@@ -94,6 +96,98 @@ def process_image_from_url(image_url: str) -> Image.Image:
 
             # Download the image
             content_stream = download_image(image_url)
+
+            # Get content bytes for format detection
+            content_bytes = content_stream.getvalue()
+            format_hint = detect_image_format(content_bytes[:16], url=image_url)
+            logger.info(f"Detected format: {format_hint}")
+
+            # Process the image with format-specific handling
+            content_stream.seek(0)  # Reset stream position
+
+            try:
+                image = open_image_with_format_specific_handling(
+                    content_stream, format_hint
+                )
+                # Convert to RGB if needed
+                return convert_to_rgb(image)
+            except Exception as e:
+                raise Exception(f"Error processing image from URL: {e}")
+    except Exception as e:
+        raise Exception(f"Error processing image URL: {e}")
+
+
+async def download_image_async(url: str) -> BytesIO:
+    """
+    Asynchronously download an image from a URL with proper headers and retry logic
+
+    Args:
+        url: URL of the image to download
+
+    Returns:
+        BytesIO containing the image data
+    """
+    # Use fake-useragent to generate random user agent
+    ua = UserAgent()
+    headers = {"User-Agent": ua.random}
+
+    # Add retry mechanism with backoff
+    for attempt in range(REQUEST_MAX_RETRIES):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)) as response:
+                    response.raise_for_status()
+                    content = await response.read()
+                    return BytesIO(content)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if attempt < REQUEST_MAX_RETRIES - 1:
+                # Wait before retrying (exponential backoff)
+                wait_time = REQUEST_BACKOFF_FACTOR**attempt
+                logger.warning(f"Request failed, retrying in {wait_time}s: {str(e)}")
+                await asyncio.sleep(wait_time)
+            else:
+                raise Exception(
+                    f"Failed to download image after {REQUEST_MAX_RETRIES} attempts: {str(e)}"
+                )
+
+
+async def process_image_from_url_async(image_url: str) -> Image.Image:
+    """
+    Asynchronously process an image from a URL (regular HTTP URL, IPFS URL, or base64 data URL)
+
+    Args:
+        image_url: URL of the image, IPFS URL, or base64 data URL
+
+    Returns:
+        PIL Image object ready for model processing
+    """
+    try:
+        # Check if it's a base64 image URL
+        if is_base64_image_url(image_url):
+            try:
+                # Decode the base64 URL (this is synchronous)
+                image_data, format_hint = decode_base64_image_url(image_url)
+
+                # Process the image data
+                content_stream = BytesIO(image_data)
+                image = open_image_with_format_specific_handling(
+                    content_stream, format_hint
+                )
+
+                # Convert to RGB if needed
+                return convert_to_rgb(image)
+            except Exception as e:
+                raise Exception(f"Error processing base64 image: {e}")
+        else:
+            # Handle IPFS URLs
+            if image_url.startswith("ipfs://"):
+                # Convert IPFS URL to IPFS gateway URL
+                ipfs_hash = image_url.replace("ipfs://", "")
+                image_url = f"https://ipfs.io/ipfs/{ipfs_hash}"
+                logger.info(f"Converting IPFS URL to IPFS gateway: {image_url}")
+
+            # Download the image asynchronously
+            content_stream = await download_image_async(image_url)
 
             # Get content bytes for format detection
             content_bytes = content_stream.getvalue()

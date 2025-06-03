@@ -274,9 +274,17 @@ async def search_similar(request: ImageUrlRequest):
 @app.on_event("startup")
 async def startup_event():
     logger.info(f"Starting {API_TITLE} v{API_VERSION}")
+    # Start the model prediction queue
+    from api.services.queue_service import model_queue
+    await model_queue.start()
+    logger.info("Model prediction queue started")
 
 
 # Log server shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info(f"Shutting down {API_TITLE}")
+    # Stop the model prediction queue
+    from api.services.queue_service import model_queue
+    await model_queue.stop()
+    logger.info("Model prediction queue stopped")

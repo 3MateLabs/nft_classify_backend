@@ -10,6 +10,7 @@ from typing import List, Union
 from transformers import AutoImageProcessor, AutoModel
 
 from api.config import MODEL_PATH, PROCESSOR_PATH, logger
+from api.services.queue_service import queued_prediction
 
 
 processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
@@ -113,9 +114,10 @@ class ModelService:
             logger.error(f"Error loading model or processor: {str(e)}")
             raise
 
-    def generate_embedding(self, image: Image.Image) -> List[List[float]]:
+    def _generate_embedding_sync(self, image: Image.Image) -> List[List[float]]:
         """
-        Generate embedding for an image
+        Synchronous method to generate embedding for an image
+        This method should not be called directly - use generate_embedding instead
 
         Args:
             image: PIL Image object
@@ -136,6 +138,19 @@ class ModelService:
         embedding_list = pooler_output.detach().cpu().numpy().tolist()
 
         return embedding_list
+
+    @queued_prediction
+    def generate_embedding(self, image: Image.Image) -> List[List[float]]:
+        """
+        Generate embedding for an image (queued for single-threaded execution)
+
+        Args:
+            image: PIL Image object
+
+        Returns:
+            List of embedding values (as nested list for proper JSON serialization)
+        """
+        return self._generate_embedding_sync(image)
 
 
 # Create a global service instance
