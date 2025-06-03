@@ -1,1 +1,1 @@
-uvicorn api.main:app --host 0.0.0.0 --port 3001 --workers 4
+nice -n 15 uvicorn api.main:app --host 0.0.0.0 --port 3001 --workers 1
