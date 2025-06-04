@@ -11,6 +11,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 from api.config import API_TITLE, API_DESCRIPTION, API_VERSION, logger
 from api.models.request_models import ImageUrlRequest, ImageUrlWithPayloadRequest
 from api.handlers.embedding_handlers import url_to_embedding, file_to_embedding
+from api.services.cache_service import embedding_cache
 
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from qdrant_client.http.models import PointStruct
@@ -215,6 +216,28 @@ async def upsert_url_with_payload_to_db(request: ImageUrlWithPayloadRequest):
             status_code=500,
             content={"error": str(e), "traceback": error_traceback},
         )
+
+
+@app.get("/cache/stats", dependencies=[Depends(get_api_key)])
+async def get_cache_stats():
+    """
+    Get cache statistics
+    
+    Returns information about cache hits, misses, size, and hit rate
+    """
+    stats = await embedding_cache.get_stats()
+    return stats
+
+
+@app.post("/cache/clear", dependencies=[Depends(get_api_key)])
+async def clear_cache():
+    """
+    Clear the embedding cache
+    
+    Removes all cached embeddings from memory
+    """
+    await embedding_cache.clear()
+    return {"status": "success", "message": "Cache cleared"}
 
 
 @app.post("/search_similar", dependencies=[Depends(get_api_key)])

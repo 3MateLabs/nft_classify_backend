@@ -1,8 +1,8 @@
-# Model Prediction Queue Implementation
+# Model Prediction Queue and Cache Implementation
 
 ## Overview
 
-This implementation ensures that model predictions run one at a time (single-threaded) while allowing image downloads to happen asynchronously. This prevents memory issues and ensures consistent performance when multiple requests are made concurrently.
+This implementation ensures that model predictions run one at a time (single-threaded) while allowing image downloads to happen asynchronously. It also includes an LRU cache for the latest 1000 URLs to avoid redundant processing. This prevents memory issues and ensures consistent performance when multiple requests are made concurrently.
 
 ## Architecture
 
@@ -26,48 +26,88 @@ This implementation ensures that model predictions run one at a time (single-thr
 4. **Handler Updates** (`api/handlers/embedding_handlers.py`)
    - `url_to_embedding()` now uses async image download
    - Model predictions are awaited (handled by queue)
+   - Cache check happens before processing
+
+5. **Cache Service** (`api/services/cache_service.py`)
+   - LRU (Least Recently Used) cache for 1000 URLs
+   - Thread-safe implementation using `asyncio.Lock`
+   - Tracks cache hits, misses, and evictions
+   - SHA256 hash-based key generation
 
 ## How It Works
 
+### Queue System
 1. **Multiple requests arrive** at `/embed_from_url` endpoint
-2. **Images download concurrently** using `aiohttp`
-3. **Model predictions are queued** and execute one at a time
-4. **Results return** as each prediction completes
+2. **Cache is checked first** - if URL exists in cache, return immediately
+3. **Images download concurrently** using `aiohttp` (for cache misses)
+4. **Model predictions are queued** and execute one at a time
+5. **Results are cached** before returning to client
+
+### Cache System
+1. **Cache lookup** using SHA256 hash of URL
+2. **Cache hit** returns result immediately (sub-millisecond)
+3. **Cache miss** proceeds with normal processing
+4. **LRU eviction** when cache exceeds 1000 entries
+5. **Thread-safe** operations using asyncio locks
 
 ## Testing
 
-Run the test script to verify the implementation:
-
+### Queue Testing
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the server
-uvicorn api.main:app --reload
-
-# In another terminal, run the test
+# Test concurrent requests and queue behavior
 python test_queue.py
 ```
 
-The test will:
-- Send 5 concurrent requests
-- Show timing for each request
-- Verify that model predictions run sequentially
+### Cache Testing
+```bash
+# Test cache functionality
+python test_cache.py
+```
+
+The tests will verify:
+- Model predictions run sequentially (queue)
+- Cache hits are significantly faster than misses
+- LRU eviction works correctly
+- Statistics are tracked accurately
 
 ## Benefits
 
 1. **Memory Safety**: Only one model runs at a time, preventing OOM errors
 2. **Better Performance**: Image downloads happen concurrently
-3. **Scalability**: Queue can handle many pending requests
-4. **Transparency**: Detailed logging shows queue status
+3. **Cache Efficiency**: Repeated requests return instantly from cache
+4. **Scalability**: Queue can handle many pending requests
+5. **Transparency**: Detailed logging shows queue and cache status
+6. **Cost Savings**: Reduced model inference for duplicate requests
 
 ## Configuration
 
 The queue starts automatically when the FastAPI app starts and stops gracefully on shutdown. No additional configuration is needed.
 
+## API Endpoints
+
+### Cache Management
+- `GET /cache/stats` - Get cache statistics (hits, misses, size, hit rate)
+- `POST /cache/clear` - Clear all cached entries
+
 ## Monitoring
 
-Check the logs for queue information:
+Check the logs for:
 - Queue size when tasks are added
 - When model predictions start/complete
+- Cache hits/misses with URL and key info
 - Any errors during processing
+
+Example cache stats response:
+```json
+{
+  "size": 42,
+  "max_size": 1000,
+  "hits": 123,
+  "misses": 45,
+  "evictions": 0,
+  "hit_rate": "73.21%",
+  "total_requests": 168,
+  "oldest_entry_age_seconds": 3600.5,
+  "newest_entry_age_seconds": 2.1
+}
+```

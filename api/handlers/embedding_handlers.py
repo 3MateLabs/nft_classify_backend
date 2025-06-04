@@ -3,12 +3,13 @@ API handlers for embedding generation endpoints
 """
 
 import traceback
-from fastapi import HTTPException, UploadFile, Depends
+from fastapi import HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from api.models.request_models import ImageUrlRequest, EmbeddingResponse, ErrorResponse
-from api.services.image_service import process_image_from_url, process_image_from_bytes, process_image_from_url_async
+from api.models.request_models import ImageUrlRequest, ErrorResponse
+from api.services.image_service import process_image_from_bytes, process_image_from_url_async
 from api.services.model_service import model_service
+from api.services.cache_service import embedding_cache
 from api.config import logger
 
 
@@ -23,6 +24,12 @@ async def url_to_embedding(request: ImageUrlRequest) -> JSONResponse:
         JSONResponse with embedding data or error details
     """
     try:
+        # Check cache first
+        cached_result = await embedding_cache.get(request.img_url)
+        if cached_result is not None:
+            logger.info(f"Returning cached result for URL: {request.img_url[:100]}...")
+            return JSONResponse(content={"embedding": cached_result, "cached": True})
+        
         # Process the image from URL asynchronously
         logger.info(f"Processing image from URL: {request.img_url[:100]}...")
         image = await process_image_from_url_async(request.img_url)
@@ -36,14 +43,17 @@ async def url_to_embedding(request: ImageUrlRequest) -> JSONResponse:
         elapsed_time = time.time() - start_time
         logger.info(f"Embedding generation took {elapsed_time:.2f} seconds")
 
+        # Cache the result
+        await embedding_cache.put(request.img_url, embedding)
+
         # Return result
-        return JSONResponse(content={"embedding": embedding})
+        return JSONResponse(content={"embedding": embedding, "cached": False})
     except Exception as e:
         error_traceback = traceback.format_exc()
         logger.error(f"Error in url_to_embedding: {str(e)}\n{error_traceback}")
         return JSONResponse(
             status_code=500,
-            content=ErrorResponse(error=str(e), traceback=error_traceback).dict(),
+            content=ErrorResponse(error=str(e), traceback=error_traceback).model_dump(),
         )
 
 
@@ -76,5 +86,5 @@ async def file_to_embedding(file: UploadFile) -> JSONResponse:
         logger.error(f"Error in file_to_embedding: {str(e)}\n{error_traceback}")
         return JSONResponse(
             status_code=500 if isinstance(e, HTTPException) else 400,
-            content=ErrorResponse(error=str(e), traceback=error_traceback).dict(),
+            content=ErrorResponse(error=str(e), traceback=error_traceback).model_dump(),
         )
